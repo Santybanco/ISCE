@@ -160,6 +160,25 @@ def procesar_alcon():
 
     df_alcon = limpiar_gerencias_invalidas(df_alcon, "Gerencia")
 
+    # ----------------------------------
+    # CORTE POR TOTAL GENERAL (ALCON)
+    # ----------------------------------
+    df_alcon["Gerencia_norm"] = (
+        df_alcon["Gerencia"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    idx_total = df_alcon[df_alcon["Gerencia_norm"] == "TOTAL GENERAL"].index
+
+    if len(idx_total) > 0:
+        df_alcon = df_alcon.loc[:idx_total[0]]
+
+    # Limpieza columna auxiliar
+    df_alcon = df_alcon.drop(columns=["Gerencia_norm"])
+
+
     df_alcon["Calidad Gerencia"] = pd.to_numeric(
         df_alcon["Calidad Gerencia"], errors="coerce"
     ).fillna(0)
