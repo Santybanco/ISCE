@@ -1,0 +1,16 @@
+# ----------------------
+# Python
+# ----------------------
+__pycache__/
+*.pyc
+
+# ----------------------
+# Archivos Excel temporales
+# ----------------------
+~$*.xlsx
+
+# ----------------------
+# Datos (NO versionar)
+# ----------------------
+datos/entrada/
+datos/salida/
