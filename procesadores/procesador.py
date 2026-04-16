@@ -204,6 +204,10 @@ def procesar_certificacion_gerentes():
     Procesa el archivo Histórico Indicador Certificación Gerentes
     y lo exporta al archivo de salida.
     """
+    ruta_archivo = obtener_archivo_por_coincidencia(NOMBRE_BASE_CERTIFICACION)
+    print(f"[DEBUG CERTIFICACIÓN] Usando archivo: {ruta_archivo}")
+
+    df = pd.read_excel(ruta_archivo)
 
     df = cargar_tabla_excel(
         parte_nombre_archivo=NOMBRE_BASE_CERTIFICACION,
