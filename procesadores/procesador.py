@@ -1,7 +1,10 @@
+import os
 import pandas as pd
 from openpyxl import load_workbook
 
+
 import config.configuracion as config
+
 
 from config.configuracion import (
     NOMBRE_BASE_ALCON,
@@ -108,7 +111,11 @@ def cargar_alcon_con_encabezado_dinamico():
 
     ruta_archivo = obtener_archivo_por_coincidencia(NOMBRE_BASE_ALCON)
 
-    df_crudo = pd.read_excel(ruta_archivo, sheet_name=HOJA_ALCON, header=None)
+    df_crudo = pd.read_excel(
+        ruta_archivo,
+        sheet_name=HOJA_ALCON,
+        header=None
+    )
 
     fila_encabezado = None
 
@@ -122,7 +129,11 @@ def cargar_alcon_con_encabezado_dinamico():
     if fila_encabezado is None:
         raise Exception("No se encontró encabezado en ALCON")
 
-    df = pd.read_excel(ruta_archivo, sheet_name=HOJA_ALCON, header=fila_encabezado)
+    df = pd.read_excel(
+        ruta_archivo,
+        sheet_name=HOJA_ALCON,
+        header=fila_encabezado
+    )
 
     # Limpiar nombres de columnas
     df.columns = (
@@ -133,7 +144,7 @@ def cargar_alcon_con_encabezado_dinamico():
         .str.replace("\r", " ", regex=False)
     )
 
-    # Buscar columnas reales por coincidencia flexible
+    # Buscar columnas reales por coincidencia
     columnas_limpias = {col.lower(): col for col in df.columns}
     columnas_reales = []
 
@@ -146,7 +157,7 @@ def cargar_alcon_con_encabezado_dinamico():
             raise Exception(f"No se encontró la columna: {col}")
 
     df = df[columnas_reales].copy()
-    df.columns = COLUMNAS_ALCON  # Renombrar para que quede uniforme
+    df.columns = COLUMNAS_ALCON
 
     return df
 
@@ -175,12 +186,11 @@ def procesar_alcon():
     if len(idx_total) > 0:
         df_alcon = df_alcon.loc[:idx_total[0]]
 
-    # Limpieza columna auxiliar
     df_alcon = df_alcon.drop(columns=["Gerencia_norm"])
 
-
     df_alcon["Calidad Gerencia"] = pd.to_numeric(
-        df_alcon["Calidad Gerencia"], errors="coerce"
+        df_alcon["Calidad Gerencia"],
+        errors="coerce"
     ).fillna(0)
 
     escribir_dataframe_en_excel(
@@ -189,10 +199,131 @@ def procesar_alcon():
         nombre_hoja=config.MES_TRABAJO,
         celda_inicio=CELDA_INICIO_ALCON,
         columna_porcentaje=4,
-        formato_porcentaje='0.0%'
+        formato_porcentaje="0.0%"
     )
 
     return df_alcon
+
+
+# ==============================
+# CAPTURA MANUAL
+# ==============================
+
+def procesar_captura_manual():
+    """
+    Procesa el archivo 'Historico Indicador Captura Manual.xlsx'
+    y copia la tabla completa (encabezados + datos)
+    desde 'Se encontró Comprobante' hasta 'Total general',
+    pegándola correctamente desde A123.
+    """
+
+    import unicodedata
+
+    # --------------------------------------------------
+    # Función auxiliar para normalizar texto (acentos)
+    # --------------------------------------------------
+    def normalizar_texto(texto):
+        return (
+            unicodedata.normalize("NFKD", str(texto))
+            .encode("ascii", "ignore")
+            .decode("utf-8")
+            .lower()
+        )
+
+    # --------------------------------------------------
+    # Obtener ruta del archivo mensual
+    # --------------------------------------------------
+    ruta_archivo = obtener_archivo_por_coincidencia(
+        config.NOMBRE_BASE_CAPTURA_MANUAL
+    )
+
+    print(f"[DEBUG CAPTURA MANUAL] Usando archivo: {ruta_archivo}")
+
+    # --------------------------------------------------
+    # Leer todo el Excel sin encabezados
+    # --------------------------------------------------
+    df_raw = pd.read_excel(ruta_archivo, header=None)
+
+    # --------------------------------------------------
+    # Buscar fila del título 'Se encontró Comprobante'
+    # --------------------------------------------------
+    idx_inicio = df_raw[
+        df_raw.apply(
+            lambda fila: any(
+                "se encontro comprobante" in normalizar_texto(celda)
+                for celda in fila
+            ),
+            axis=1
+        )
+    ].index
+
+    if idx_inicio.empty:
+        raise Exception(
+            "No se encontró la fila 'Se encontró Comprobante' en Captura Manual"
+        )
+
+    fila_titulo = idx_inicio[0]
+
+    # --------------------------------------------------
+    # La fila siguiente son los encabezados reales
+    # --------------------------------------------------
+    fila_encabezados = fila_titulo + 1
+
+    # Construir DataFrame desde ahí
+    datos = df_raw.iloc[fila_encabezados + 1:].copy()
+    datos.columns = df_raw.iloc[fila_encabezados]
+    datos = datos.reset_index(drop=True)
+
+    # --------------------------------------------------
+    # Cortar exactamente en 'Total general'
+    # --------------------------------------------------
+    idx_total = datos[
+        datos.iloc[:, 0]
+        .apply(normalizar_texto)
+        .str.contains("total general", na=False)
+    ].index
+
+    if not idx_total.empty:
+        datos = datos.loc[:idx_total[0]]
+
+    # --------------------------------------------------
+    # Abrir archivo de salida
+    # --------------------------------------------------
+    ruta_salida = obtener_ruta_salida(config.NOMBRE_ARCHIVO_SALIDA)
+    wb = load_workbook(ruta_salida)
+    ws = wb[config.MES_TRABAJO]
+
+    # --------------------------------------------------
+    # Escribir encabezados en A123:E123 (CORRECTOS)
+    # --------------------------------------------------
+    fila_inicio = 123
+    encabezados = [
+        "Gerencia",
+        "No",
+        "Sí",
+        "Total general",
+        "Indicador"
+    ]
+
+    for col, texto in enumerate(encabezados, start=1):
+        ws.cell(row=fila_inicio, column=col, value=texto)
+
+    # --------------------------------------------------
+    # Escribir datos desde A124
+    # --------------------------------------------------
+    for fila_excel, fila_datos in enumerate(
+        datos.itertuples(index=False),
+        start=fila_inicio + 1
+    ):
+        ws.cell(row=fila_excel, column=1, value=fila_datos[0])  # Gerencia
+        ws.cell(row=fila_excel, column=2, value=fila_datos[1])  # No
+        ws.cell(row=fila_excel, column=3, value=fila_datos[2])  # Sí
+        ws.cell(row=fila_excel, column=4, value=fila_datos[3])  # Total general
+        ws.cell(row=fila_excel, column=5, value=fila_datos[4])  # Indicador (%)
+        ws.cell(row=fila_excel, column=5).number_format = "0.00%"
+
+    wb.save(ruta_salida)
+
 
 
 # ==============================
@@ -204,10 +335,12 @@ def procesar_certificacion_gerentes():
     Procesa el archivo Histórico Indicador Certificación Gerentes
     y lo exporta al archivo de salida.
     """
-    ruta_archivo = obtener_archivo_por_coincidencia(NOMBRE_BASE_CERTIFICACION)
-    print(f"[DEBUG CERTIFICACIÓN] Usando archivo: {ruta_archivo}")
 
-    df = pd.read_excel(ruta_archivo)
+    ruta_archivo = obtener_archivo_por_coincidencia(
+        NOMBRE_BASE_CERTIFICACION
+    )
+
+    print(f"[DEBUG CERTIFICACIÓN] Usando archivo: {ruta_archivo}")
 
     df = cargar_tabla_excel(
         parte_nombre_archivo=NOMBRE_BASE_CERTIFICACION,
@@ -223,14 +356,20 @@ def procesar_certificacion_gerentes():
     ]
 
     df["FECHA CERTIFICACIÓN"] = pd.to_datetime(
-        df["FECHA CERTIFICACIÓN"], errors="coerce", dayfirst=True
+        df["FECHA CERTIFICACIÓN"],
+        errors="coerce",
+        dayfirst=True
     )
 
     df["FECHA OBJETIVO"] = pd.to_datetime(
-        df["FECHA OBJETIVO"], errors="coerce", dayfirst=True
+        df["FECHA OBJETIVO"],
+        errors="coerce",
+        dayfirst=True
     )
 
-    df["INDICADOR"] = df["INDICADOR"].apply(convertir_porcentaje)
+    df["INDICADOR"] = df["INDICADOR"].apply(
+        convertir_porcentaje
+    )
 
     escribir_dataframe_en_excel(
         df=df,
@@ -239,12 +378,11 @@ def procesar_certificacion_gerentes():
         celda_inicio=CELDA_INICIO_CERTIFICACION,
         columna_porcentaje=3,
         calcular_promedio=True,
-        formato_porcentaje='0.0%',
+        formato_porcentaje="0.0%",
         columnas_fecha=[1, 2]
     )
 
     return df
-
 
 # ==============================
 # TEMPORALES - TD SALDO
@@ -1188,3 +1326,222 @@ def procesar_cxp():
     )
 
     return exportar, exportar_sabana
+
+def procesar_partidas_mayores_180():
+    """
+    Procesa el archivo 'Medicion Partidas Superiores 180 dias*.xlsx'
+    ubicado en la subcarpeta 'Monitoreo Bancario' del mes correspondiente.
+    Copia la tabla con encabezados, limpia los datos,
+    calcula el porcentaje y la pega desde A160:D.
+    """
+
+    import unicodedata
+    import re
+
+    # --------------------------------------------------
+    # Normalizar texto (acentos)
+    # --------------------------------------------------
+    def normalizar_texto(texto):
+        return (
+            unicodedata.normalize("NFKD", str(texto))
+            .encode("ascii", "ignore")
+            .decode("utf-8")
+            .lower()
+        )
+
+    # --------------------------------------------------
+    # Limpiar valores numéricos (ej: "600 g")
+    # --------------------------------------------------
+    def limpiar_numero(valor):
+        if valor is None:
+            return 0
+        texto = re.sub(r"[^\d.-]", "", str(valor))
+        return float(texto) if texto != "" else 0
+
+    # --------------------------------------------------
+    # Ruta del mes → Monitoreo Bancario
+    # --------------------------------------------------
+    ruta_mes_monitoreo = os.path.join(
+        config.RUTA_ONEDRIVE_BASE,
+        config.CARPETA_INSUMOS_INDICADORES,
+        config.MES_TRABAJO,
+        config.SUBCARPETA_MONITOREO_BANCARIO
+    )
+
+    if not os.path.exists(ruta_mes_monitoreo):
+        raise Exception(
+            f"No existe la ruta de Monitoreo Bancario para el mes {config.MES_TRABAJO}"
+        )
+
+    # --------------------------------------------------
+    # Buscar archivo por coincidencia
+    # --------------------------------------------------
+    ruta_archivo = None
+
+    for nombre_archivo in os.listdir(ruta_mes_monitoreo):
+        if (
+            config.NOMBRE_BASE_PARTIDAS_180.lower() in nombre_archivo.lower()
+            and nombre_archivo.lower().endswith(".xlsx")
+        ):
+            ruta_archivo = os.path.join(ruta_mes_monitoreo, nombre_archivo)
+            break
+
+    if ruta_archivo is None:
+        raise Exception(
+            f"No se encontró el archivo '{config.NOMBRE_BASE_PARTIDAS_180}' en {ruta_mes_monitoreo}"
+        )
+
+    print(f"[DEBUG PARTIDAS >180] Usando archivo: {ruta_archivo}")
+
+    # --------------------------------------------------
+    # Leer todas las hojas y encontrar la tabla
+    # --------------------------------------------------
+    hojas_excel = pd.read_excel(ruta_archivo, sheet_name=None, header=None)
+
+    tabla = None
+    fila_encabezado = None
+
+    for _, df_hoja in hojas_excel.items():
+        idx = df_hoja[
+            df_hoja.apply(
+                lambda fila: any(
+                    "gerencias" in normalizar_texto(celda) for celda in fila
+                ),
+                axis=1
+            )
+        ].index
+
+        if not idx.empty:
+            tabla = df_hoja
+            fila_encabezado = idx[0]
+            break
+
+    if tabla is None:
+        raise Exception(
+            "No se encontró encabezado de tabla en Partidas > 180 días"
+        )
+
+    # --------------------------------------------------
+    # Construir DataFrame (datos)
+    # --------------------------------------------------
+    datos = tabla.iloc[fila_encabezado + 1:].copy()
+    datos.columns = tabla.iloc[fila_encabezado]
+    datos = datos.reset_index(drop=True)
+
+    # --------------------------------------------------
+    # Limpiar columnas numéricas
+    # --------------------------------------------------
+    datos.iloc[:, 1] = datos.iloc[:, 1].apply(limpiar_numero)
+    datos.iloc[:, 2] = datos.iloc[:, 2].apply(limpiar_numero)
+
+    # --------------------------------------------------
+    # Calcular porcentaje
+    # --------------------------------------------------
+    # Calcular porcentaje de forma segura (evitar división por cero)
+    datos["%"] = datos.apply(
+        lambda fila: fila.iloc[2] / fila.iloc[1]
+        if fila.iloc[1] != 0 else 0,
+        axis=1
+    )
+
+
+    # --------------------------------------------------
+    # Cortar en Total general
+    # --------------------------------------------------
+    idx_total = datos[
+        datos.iloc[:, 0]
+        .apply(normalizar_texto)
+        .str.contains("total general", na=False)
+    ].index
+
+    if not idx_total.empty:
+        datos = datos.loc[:idx_total[0]]
+
+    # --------------------------------------------------
+    # Abrir archivo de salida
+    # --------------------------------------------------
+    ruta_salida = obtener_ruta_salida(config.NOMBRE_ARCHIVO_SALIDA)
+    wb = load_workbook(ruta_salida)
+    ws = wb[config.MES_TRABAJO]
+
+    # --------------------------------------------------
+    # Escribir encabezados en A160:D160
+    # --------------------------------------------------
+    fila_inicio = 160
+    encabezados = [
+        "Gerencias",
+        "Partidas pendientes débito",
+        "Partidas débito mayores a 180 días",
+        "%"
+    ]
+
+    for col, texto in enumerate(encabezados, start=1):
+        ws.cell(row=fila_inicio, column=col, value=texto)
+
+    # --------------------------------------------------
+    # Escribir datos desde A161
+    # --------------------------------------------------
+    for fila_excel, fila_datos in enumerate(
+        datos.itertuples(index=False),
+        start=fila_inicio + 1
+    ):
+        ws.cell(row=fila_excel, column=1, value=fila_datos[0])
+        ws.cell(row=fila_excel, column=2, value=fila_datos[1])
+        ws.cell(row=fila_excel, column=3, value=fila_datos[2])
+        # Escribir porcentaje
+        ws.cell(row=fila_excel, column=4, value=fila_datos[3])
+
+        # Formato: una cifra para filas normales, dos para Total general
+        if normalizar_texto(str(fila_datos[0])).startswith("total general"):
+            ws.cell(row=fila_excel, column=4).number_format = "0.00%"
+        else:
+            ws.cell(row=fila_excel, column=4).number_format = "0.0%"
+
+
+    wb.save(ruta_salida)
+
+def escribir_titulos_indicadores():
+    """
+    Escribe y formatea todos los títulos de las tablas
+    en la hoja correspondiente al mes de trabajo.
+    """
+
+    from openpyxl.styles import Alignment, Font
+    from openpyxl.utils import range_boundaries
+
+    ruta_salida = obtener_ruta_salida(config.NOMBRE_ARCHIVO_SALIDA)
+    wb = load_workbook(ruta_salida)
+    ws = wb[config.MES_TRABAJO]
+
+    titulos = [
+        # (texto, rango)
+        ("TEMPORALES", "A2:M2"),
+        ("CUENTAS POR COBRAR", "A34:M34"),
+        ("CUENTAS POR PAGAR", "A58:M58"),
+        ("Atención de las alertas contables con calidad", "A81:E81"),
+        ("CUSTODIA DE COMPROBANTES CAPTURA MANUAL SAP", "A121:M121"),
+        ("RODAMIENTO DE PARTIDAS CONCILIATORIAS (Se entrega mes vencido)", "A158:M158"),
+        ("Indicador Certificación Gerentes", "A178:E178"),
+    ]
+
+    for texto, rango in titulos:
+        min_col, min_row, max_col, max_row = range_boundaries(rango)
+
+        # Combinar celdas
+        ws.merge_cells(rango)
+
+        celda = ws.cell(row=min_row, column=min_col)
+        celda.value = texto
+
+        # Formato
+        celda.alignment = Alignment(
+            horizontal="center",
+            vertical="center"
+        )
+
+        celda.font = Font(
+            bold=True,
+            size=11
+        )
+
+    wb.save(ruta_salida)

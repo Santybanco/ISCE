@@ -8,10 +8,14 @@ from utils.mensajes import confirmar_inicio, mostrar_info, mostrar_error
 from procesadores.procesador import (
     procesar_alcon,
     procesar_certificacion_gerentes,
+    procesar_captura_manual,
+    procesar_partidas_mayores_180,
     procesar_temporales_td_saldo,
     procesar_temporales_td_sabana,
     procesar_cxc,
-    procesar_cxp
+    procesar_cxp,
+    escribir_titulos_indicadores
+
 )
 
 # ==============================
@@ -64,6 +68,14 @@ def ejecutar_indicadores():
             print("• Procesando Certificación de Gerentes...")
             procesar_certificacion_gerentes()
 
+            print("• Procesando Captura Manual...")
+            procesar_captura_manual()
+
+            
+            print("• Procesando Partidas débito mayores a 180 días...")
+            procesar_partidas_mayores_180()
+
+
             print("• Procesando Temporales - TD Saldo...")
             procesar_temporales_td_saldo()
 
@@ -75,6 +87,8 @@ def ejecutar_indicadores():
 
             print("• Procesando CXP...")
             procesar_cxp()
+
+            escribir_titulos_indicadores()
 
             print(f"✅ Mes {mes} procesado correctamente")
 
